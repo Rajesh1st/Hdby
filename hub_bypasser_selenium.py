@@ -1,4 +1,3 @@
-# hub_bypasser_selenium.py
 import time
 import re
 from typing import List
@@ -6,6 +5,7 @@ from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
+from urllib.parse import urlparse
 
 def setup_selenium() -> webdriver.Chrome:
     """Setup Selenium WebDriver with appropriate options (headless)."""
@@ -15,10 +15,21 @@ def setup_selenium() -> webdriver.Chrome:
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--window-size=1920,1080")
-    chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36")
+    chrome_options.add_argument(
+        "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+    )
     # If using chromedriver-binary, webdriver.Chrome() will find it automatically.
     driver = webdriver.Chrome(options=chrome_options)
     return driver
+
+def _is_valid_http_url(u: str) -> bool:
+    """Return True if u is a valid http or https URL with netloc."""
+    try:
+        p = urlparse(u or "")
+        return p.scheme in ("http", "https") and bool(p.netloc)
+    except Exception:
+        return False
 
 def extract_hub_links_from_page(html_content: str) -> List[str]:
     """Extract HubDrive/HubCDN/HubCloud links from page content."""
@@ -64,8 +75,19 @@ def extract_hub_links_from_page(html_content: str) -> List[str]:
     return unique
 
 def bypass_mediator_and_get_links(mediator_url: str, wait_after_load: int = 5) -> List[str]:
-    """Load mediator URL in headless Chrome, try clicks if present, return hub links."""
+    """
+    Load mediator URL in headless Chrome, try clicks if present, return hub links.
+
+    Raises:
+        ValueError: if mediator_url is invalid (empty or not http/https).
+    """
+    mediator_url = (mediator_url or "").strip()
     print("Starting mediator bypass for:", mediator_url)
+
+    # Validate before creating webdriver to avoid Chrome invalid-argument errors
+    if not _is_valid_http_url(mediator_url):
+        raise ValueError("Invalid mediator URL (must start with http:// or https://)")
+
     driver = setup_selenium()
 
     try:
@@ -81,7 +103,11 @@ def bypass_mediator_and_get_links(mediator_url: str, wait_after_load: int = 5) -
         except Exception:
             # try other common button texts
             try:
-                alt = driver.find_elements(By.XPATH, "//button[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'verify') or contains(., 'Continue') or contains(., 'Proceed')]")
+                alt = driver.find_elements(
+                    By.XPATH,
+                    "//button[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'verify') "
+                    "or contains(., 'Continue') or contains(., 'Proceed')]"
+                )
                 if alt:
                     print("Clicking alt verify button...")
                     driver.execute_script("arguments[0].click();", alt[0])
@@ -121,7 +147,10 @@ def bypass_mediator_and_get_links(mediator_url: str, wait_after_load: int = 5) -
                     elems = driver.find_elements(By.CSS_SELECTOR, sel)
                 else:
                     # text-based xpath (case-insensitive)
-                    elems = driver.find_elements(By.XPATH, f"//a[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{sel}')]")
+                    elems = driver.find_elements(
+                        By.XPATH,
+                        f"//a[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{sel}')]"
+                    )
                 if elems:
                     el = elems[0]
                     if el.tag_name.lower() == "a":
@@ -152,7 +181,8 @@ def bypass_mediator_and_get_links(mediator_url: str, wait_after_load: int = 5) -
         return hub_links
 
     except Exception as e:
-        print("Error during bypass:", e)
+        # Keep the logged message short to avoid noisy chrome stacktraces in logs
+        print("Error during bypass:", str(e))
         return []
     finally:
         try:
