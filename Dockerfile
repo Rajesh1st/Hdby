@@ -1,21 +1,12 @@
-FROM python:3.11-slim
-
-# Install Chrome & dependencies
-RUN apt-get update && apt-get install -y \
-    wget unzip gnupg \
-    chromium chromium-driver \
-    && rm -rf /var/lib/apt/lists/*
+FROM python:3.10-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
 COPY . .
 
-ENV PATH="/usr/lib/chromium:/usr/bin:$PATH"
-ENV PORT=8000
+RUN apt-get update && apt-get install -y wget unzip chromium chromium-driver \
+    && pip install --no-cache-dir -r requirements.txt
 
-EXPOSE 8000
+ENV PATH="/usr/lib/chromium/:${PATH}"
 
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
